@@ -1,0 +1,79 @@
+{
+  "name": "pos",
+  "version": "1.0.1",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . && nodemon backend/server.js",
+    "build": "electron-packager . POS --icon=asmara.ico",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "release": "electron-builder --publish=always"
+  },
+  "repository": {},
+  "build": {
+    "appId": "pos.dftech.in",
+    "productName": "POS-Infinity",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/node_modules/.bin",
+      "!**/*.map"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "absk-tiwari",
+      "repo": "asmara"
+    },
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "requireAdministrator",
+      "icon": "logo.ico"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": true,
+      "runAfterFinish": true
+    }
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "POScls",
+  "devDependencies": {
+    "electron": "^34.0.2",
+    "electron-builder": "^25.1.8",
+    "electron-updater": "^6.6.2"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.7.9",
+    "bcrypt": "^5.1.1",
+    "bwip-js": "^4.5.1",
+    "cors": "^2.8.5",
+    "date-fns": "^4.1.0",
+    "dayjs": "^1.11.19",
+    "dotenv": "^17.2.2",
+    "express": "^4.21.2",
+    "express-validator": "^7.2.1",
+    "form-data": "^4.0.2",
+    "html-pdf": "^3.0.1",
+    "html-to-text": "^9.0.5",
+    "http": "^0.0.1-security",
+    "jsonwebtoken": "^9.0.2",
+    "knex": "^3.1.0",
+    "multer": "^1.4.5-lts.1",
+    "mysql2": "^3.14.2",
+    "nanoid": "^5.1.6",
+    "nodemon": "^3.1.9",
+    "objection": "^3.1.5",
+    "sharp": "^0.33.5",
+    "sqlite3": "^5.1.7",
+    "xlsx": "^0.18.5"
+  }
+}
