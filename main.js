@@ -8,12 +8,12 @@ const bwipjs = require('bwip-js');
 const server = require('./backend/server');
 const { ipcMain } = require("electron");
 const fs = require('fs');
-const imgPath = path.join(__dirname,'./logo.jpeg')
+const imgPath = path.join(__dirname, './logo.jpeg')
 const b64 = fs.readFileSync(imgPath, 'base64');
 
 let mainWindow;
 let backendProcess;
-let windows=[]
+let windows = []
 // When update is available
 autoUpdater.on("update-available", () => console.log("Update available..."));
 
@@ -32,7 +32,7 @@ function initAutoUpdate() {
 
     // When update is ready
     autoUpdater.on('update-downloaded', () => {
-    console.log('✅ Update downloaded. Restarting silently...')
+        console.log('✅ Update downloaded. Restarting silently...')
 
         // Silent install after 3 seconds
         setTimeout(() => {
@@ -41,29 +41,28 @@ function initAutoUpdate() {
     })
 }
 
-app.on('ready', () => 
-{
+app.on('ready', () => {
     server.start();
     initAutoUpdate()
     const { width, height } = electron.screen.getPrimaryDisplay().workAreaSize
     mainWindow = new BrowserWindow({
         width,
         height,
-        devTools:false,
+        devTools: false,
         autoHideMenuBar: true,
-        scrollBounce:true,
+        scrollBounce: true,
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             contextIsolation: true,
             nodeIntegration: true, // Prevent direct access to Node.js in the renderer
         },
     });
-    
+
     mainWindow.loadURL('http://localhost:5101');
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         return { action: 'deny' };
     });
-    
+
     mainWindow.webContents.once('did-finish-load', () => {
         mainWindow.show();
         mainWindow.maximize();
@@ -71,7 +70,7 @@ app.on('ready', () =>
     });
 
     mainWindow.on('closed', () => {
-        mainWindow = null;        
+        mainWindow = null;
         if (backendProcess) backendProcess.kill();
     });
 
@@ -106,27 +105,29 @@ const openDrawer = async () => {
 
     const printWindow = new BrowserWindow({ show: false });
     const html = `<html><body><style>@page{size:auto;margin:-5mm 3mm 3mm 2mm;}</style></body></html>`;
-  
+
     printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
     printWindow.webContents.on("did-finish-load", () => {
-        printWindow.webContents.print({ silent:true, pageSize:{ 
-            height:5000, 
-            width:60000
-        }}, (success, error) => {
-            if (!success || error) { 
+        printWindow.webContents.print({
+            silent: true, pageSize: {
+                height: 5000,
+                width: 60000
+            }
+        }, (success, error) => {
+            if (!success || error) {
                 if (error) console.error('Error writing to file:', error)
             };
             printWindow.close();
         });
     });
-    
+
 }
 ipcMain.handle("get-printers", async () => {
     const printers = await mainWindow.webContents.getPrintersAsync();
     return printers;
 });
 
-ipcMain.on("exit-fullscreen", (e,screen) => {
+ipcMain.on("exit-fullscreen", (e, screen) => {
     if (mainWindow) {
         mainWindow.setFullScreen(!screen);
     }
@@ -141,14 +142,14 @@ ipcMain.on('relaunch', () => {
 
 ipcMain.on('reload', (event, content) => {
 
-    const {id} = content;
+    const { id } = content;
     delete content.id;
-    windows.forEach( win => {
-        if(win) {
-            if(content.manual) {
-                win.webContents.send('data-received', { manual:true })
+    windows.forEach(win => {
+        if (win) {
+            if (content.manual) {
+                win.webContents.send('data-received', { manual: true })
             } else {
-                win.webContents.send('data-received', { reload:true, id: id, products:content})
+                win.webContents.send('data-received', { reload: true, id: id, products: content })
             }
         }
     })
@@ -160,27 +161,22 @@ ipcMain.on('close-window', () => {
     windows.forEach(w => w.close())
 })
 
-ipcMain.on("print-to-kitchen", (event, content) => {
+ipcMain.on("print-to-kitchen", async (event, content) => {
 
-    const {products, table, taste, printer} = content;
-    const printWindow = new BrowserWindow({ show:false });
-    // console.log(data, content);
-    let html = `<h2 style="text-align:center">For Table: ${table}</h2><br/><br/><hr><table><thead><tr>
-    <th>Quantity</th>
-    <th>Item</th>
-    </tr></thead><tbody>`;
-    html += products.map( item => `<tr><td>${item.stock+ " x "}</td><td>${item.name}</td></tr>`);
-    html += `</tbody><h3><b>Note</b></h3><p>${taste??'-'}</p>${taste ? `<br/><h3><b>Taste</b></h3><p>${taste}</p>`: ''}<br/><small style="text-align:end">${new Date().toLocaleString("en-US", {timeZone: "Europe/Amsterdam"})}<small>`;
+    const printWindow = new BrowserWindow({ show: false });
     
-    printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    console.log(event,content);
+
+    let htmled = await prepareKitchenPage(content);
+    
+    printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmled)}`);
     printWindow.webContents.on("did-finish-load", () => {
-        printWindow.webContents.print({
-            silent:true ,
-            deviceName: printer
-        }, (success, err) => {
-            if(err) console.log("Something went wrong with printing in kitchen!", err);
+        printWindow.webContents.print({ silent: true, deviceName:content.printer }, (success, error) => {
+            if (!success || error) {
+                if (error) console.error('Error writing to file:', error)
+            };
+            printWindow.close();
         });
-        printWindow.close();
     });
 
 });
@@ -188,7 +184,7 @@ ipcMain.on("print-to-kitchen", (event, content) => {
 ipcMain.on("print-content", (event, content) => {
 
     const printWindow = new BrowserWindow({ show: false });
-    const html = `<html><style> @page{ size:auto; margin:-5mm 3mm 3mm 2mm }
+    const html = `<html><style> @page{ size:auto; margin:5mm 0mm 5mm 2mm }
         *{font-weight:400!important;text-transform:uppercase;font-size:0.85rem!important;font-family:system-ui!important}
         .toShow{display:inline!important;}
         .row> * { flex-shrink: 0; max-width:100%; padding-left:0; align-items:center; margin-top:0 }
@@ -199,21 +195,23 @@ ipcMain.on("print-content", (event, content) => {
         .toHide {display:none!important}
      </style>
     <body style="width:32%!important;margin:0px!important;padding:0px!important;">
-        <div style="background-color:white;padding-bottom:0px;">
+        <div style="background-color:white;padding-bottom:10px;">
             <div style="display:flex;">
                 <div style="justify-content:center;text-align:center;width:100%;display:grid">
                     <img src="data:image/png;base64,${b64}" alt="" style="height:50px;object-fit:contain"/>
                 </div>
             </div>
             ${content.html}
-            <p>Generated: ${new Date().toLocaleString("en-US", {timeZone: "Europe/Amsterdam"})}</p>
+            <p style="text-align:center">Generated: ${new Date().toLocaleString("en-US", { timeZone: "Europe/Amsterdam" })}</p>
+            <br/>
+            <br/>
         </div>
     </body></html>`;
-  
+
     printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
     printWindow.webContents.on("did-finish-load", () => {
-        printWindow.webContents.print({ silent:true }, (success, error) => {
-            if (!success || error) { 
+        printWindow.webContents.print({ silent: true }, (success, error) => {
+            if (!success || error) {
                 if (error) console.error('Error writing to file:', error)
             };
             printWindow.close();
@@ -222,9 +220,9 @@ ipcMain.on("print-content", (event, content) => {
 
 });
 
-ipcMain.on(`print-report`, async(event, html) => {
+ipcMain.on(`print-report`, async (event, html) => {
     try {
-        const printWin = new BrowserWindow({ show:false });
+        const printWin = new BrowserWindow({ show: false });
         printWin.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
         printWin.webContents.on("did-finish-load", () => {
             printWin.webContents.print(
@@ -240,20 +238,20 @@ ipcMain.on(`print-report`, async(event, html) => {
     }
 });
 
-ipcMain.on("generate-barcode", async (event, content)=> {
+ipcMain.on("generate-barcode", async (event, content) => {
     try {
-        let {name,price,code} = content;
+        let { name, price, code } = content;
         const svg = await bwipjs.toSVG({
             bcid: "code128",
             text: code,
-            scale:2,
-            height:8,
-            includetext:true,
-            textxalign:'center',
-            textyalign:'below'
+            scale: 2,
+            height: 8,
+            includetext: true,
+            textxalign: 'center',
+            textyalign: 'below'
         });
 
-        const printWindow = new BrowserWindow({ show: false }); 
+        const printWindow = new BrowserWindow({ show: false });
         const barcodeHTML = `<html>
             <style>
                 @page{size:auto;margin:1mm 0mm 0mm 1mm }
@@ -278,11 +276,39 @@ ipcMain.on("generate-barcode", async (event, content)=> {
                 printWindow.close(); // Close the hidden window after printing
             });
         });
-        
+
     } catch (error) {
         console.log(error.message)
     }
 })
+
+async function prepareKitchenPage(content) {
+
+    const { products, tableName, taste, note } = content;
+    let html = `<html><style> @page{ size:auto; margin:-5mm 3mm 3mm 2mm }
+        *{font-weight:400!important;text-transform:uppercase;font-size:0.85rem!important;font-family:system-ui!important}
+    </style>
+    <body style="width:100%!important;">
+        <h2 style="text-align:center">For Table: ${tableName}</h2><br/><br/><hr>
+        <table style="margin-bottom:10px">
+            <thead>
+                <tr>
+                    <th>Quantity</th>
+                    <th>Item</th>
+                </tr>
+            </thead>
+            <tbody>`;
+
+    products.forEach( ite => {
+        html = html + `<tr><td>${ite.stock + " x "}</td><td>${ite.name}</td></tr>`;
+    });
+
+    html = html + `</tbody><h3><b>Note</b></h3><p>${note ?? '-'}</p>${taste ? `<br/><h3><b>Taste</b></h3><p>${taste}</p>` : ''}<br/>
+    <small style="text-align:end">${new Date().toLocaleString("en-US", { timeZone: "Europe/Amsterdam" })}<small><br/><br/><br/><br/></html>`;
+
+    return html;
+
+}
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();

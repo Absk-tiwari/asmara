@@ -2,8 +2,6 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
-const axios = require('axios');
 const {knex} = require('./db');
 const app = express();
 const port = 5101;
