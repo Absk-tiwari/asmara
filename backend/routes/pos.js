@@ -22,7 +22,8 @@ router.get('/items', fetchuser, async(req, res) => { // updated function
             'tax',
             'image',
             'stock',
-            'thumb'
+            'thumb',
+            'seq'
         ];
 
         if (req.body.category_id && req.body.category_id !== 'all') {

@@ -7,10 +7,10 @@ const MenuCategory = require("../models/MenuCategory");
 
 let error = { status : false, message:'Something went wrong!' }
   
-router.get('/', fetchuser, async (req,res) => {
+router.get('/', async (req,res) => {
     try {  
         let categories = MenuCategory.query()
-        .orderBy(`sq`).select(['id','name']);
+        .orderBy(`sq_pos`).select(['id','name']);
         return res.json({status:true, categories: await categories });
     } catch (e) {
         console.log("exception occured: ",e)

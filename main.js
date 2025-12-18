@@ -23,10 +23,28 @@ autoUpdater.on("update-downloaded", () => {
     autoUpdater.quitAndInstall();
 });
 
+function initAutoUpdate() {
+    autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+
+    // Check when app starts
+    autoUpdater.checkForUpdates()
+
+    // When update is ready
+    autoUpdater.on('update-downloaded', () => {
+    console.log('✅ Update downloaded. Restarting silently...')
+
+        // Silent install after 3 seconds
+        setTimeout(() => {
+            autoUpdater.quitAndInstall(true, true)
+        }, 3000)
+    })
+}
+
 app.on('ready', () => 
 {
     server.start();
-    autoUpdater.checkForUpdates()
+    initAutoUpdate()
     const { width, height } = electron.screen.getPrimaryDisplay().workAreaSize
     mainWindow = new BrowserWindow({
         width,
@@ -103,6 +121,10 @@ const openDrawer = async () => {
     });
     
 }
+ipcMain.handle("get-printers", async () => {
+    const printers = await mainWindow.webContents.getPrintersAsync();
+    return printers;
+});
 
 ipcMain.on("exit-fullscreen", (e,screen) => {
     if (mainWindow) {
@@ -138,6 +160,31 @@ ipcMain.on('close-window', () => {
     windows.forEach(w => w.close())
 })
 
+ipcMain.on("print-to-kitchen", (event, content) => {
+
+    const {products, table, taste, printer} = content;
+    const printWindow = new BrowserWindow({ show:false });
+    // console.log(data, content);
+    let html = `<h2 style="text-align:center">For Table: ${table}</h2><br/><br/><hr><table><thead><tr>
+    <th>Quantity</th>
+    <th>Item</th>
+    </tr></thead><tbody>`;
+    html += products.map( item => `<tr><td>${item.stock+ " x "}</td><td>${item.name}</td></tr>`);
+    html += `</tbody><h3><b>Note</b></h3><p>${taste??'-'}</p>${taste ? `<br/><h3><b>Taste</b></h3><p>${taste}</p>`: ''}<br/><small style="text-align:end">${new Date().toLocaleString("en-US", {timeZone: "Europe/Amsterdam"})}<small>`;
+    
+    printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    printWindow.webContents.on("did-finish-load", () => {
+        printWindow.webContents.print({
+            silent:true ,
+            deviceName: printer
+        }, (success, err) => {
+            if(err) console.log("Something went wrong with printing in kitchen!", err);
+        });
+        printWindow.close();
+    });
+
+});
+
 ipcMain.on("print-content", (event, content) => {
 
     const printWindow = new BrowserWindow({ show: false });
@@ -155,7 +202,7 @@ ipcMain.on("print-content", (event, content) => {
         <div style="background-color:white;padding-bottom:0px;">
             <div style="display:flex;">
                 <div style="justify-content:center;text-align:center;width:100%;display:grid">
-                    <img src="data:image/png;base64,${b64}" alt="" height="100"/>
+                    <img src="data:image/png;base64,${b64}" alt="" style="height:50px;object-fit:contain"/>
                 </div>
             </div>
             ${content.html}

@@ -11,10 +11,6 @@ const { format } = require('date-fns');
 const path = require('path');
 const pdf = require('html-pdf');
 const fs = require('fs');
-const dayjs = require('dayjs');
-const relativeTime = require('dayjs/plugin/relativeTime');
-
-dayjs.extend(relativeTime);
 
 const { generatePdf, europeanDate } = require('../utils');
 const imgPath = path.join(__dirname,'../client/build/static/media/logo.2d2e09f65e21f53b1f9f.png');
@@ -23,7 +19,7 @@ let b64;
 
 let error = { status : false, message:'Something went wrong!' }
 
-router.get('/', fetchuser , async(req, res) => {
+router.get('/', async(req, res) => {
 
     const orders = await Order.query() // where('user_id', req.body.myID)
     .withGraphFetched('[cashier(selectName), register]')
@@ -33,51 +29,90 @@ router.get('/', fetchuser , async(req, res) => {
         }
     })
     .orderBy('created_at', 'desc');
-
-    // below code was for multi-user POS its not been in use from a while
-    // let me = await User.query().where('id', req.body.myID ).first();
-    // if(me.type == 'admin') {
-    //     orders.orderBy('id', 'desc'); 
-    // } else {
-    //     orders.where('cashier_id', me.id ).orderBy('id', 'desc');
-    // }
     
     let prs = await Product.query().select('id','name');
     let products = {};
+
     prs.forEach( pr => {
         products[pr.id] = pr.name;
     });
 
-    let options = [];
     const sessions = await CashRegister.query().select(['id','date']).groupBy('date');
-    sessions.forEach( s => {
-        options.push({
-            value: s.id,
-            label: s.date
-        });
-    });
+
+    let options = sessions.map( se => ({ value: se.id, label: se.date }));
 
     let tableOrders = {};
     orders.forEach( order => {
-        if(order.status==='ongoing' || order.status === 'in-kitchen') {
+        if(order && order.status!=='completed') {
             tableOrders[order.tables] = {
                 id: order.id,
                 data: JSON.parse(order.data??'{}'),
                 status: order.status,
+                payment: order.payment_status,
+                taste: order.taste,
                 total: order.total
             };
         }
-        // continue;
     });
 
     return res.json({
         status:true,
-        orders: orders.map( o => ({...o, ago: dayjs(o.created_at).fromNow()})),
+        orders,
         products,
         sessions: options,
-        tableOrders
+        tableOrders,
     });
 
+});
+
+router.get('/cancel/:order/:table', async(req,res) => {
+    try {
+        const deleted = await Order.query().deleteById(req.params.order);
+
+        await Table.query().whereIn('table_number', req.params.table.split("+")).patch({
+            status: "free"
+        });
+        
+        return res.json({
+            status:true,
+            message: "Order cancelled!",
+            deleted
+        });
+
+    } catch (error) {
+        return res.json({
+            status:false,
+            message: error.message
+        });   
+    }
+});
+
+router.get('/finish/:order/:table', async(req,res) => {
+    try {
+
+        const order = await Order.query().patchAndFetchById(req.params.order, {
+            status: "completed"
+        });
+
+        const tables = req.params.table.indexOf('+')=== -1 ? [ req.params.table ] : req.params.table.split('+');
+
+        await Table.query().whereIn('table_number', tables).patch({
+            status: "free",
+            linked_to: null
+        });
+        
+        return res.json({
+            status:true,
+            message: "Order completed & table freed!",
+            order
+        });
+        
+    } catch (error) {
+        return res.json({
+            status:false,
+            message: error.message
+        });   
+    }
 });
 
 router.post('/create', fetchuser, async(req, res) => 
@@ -96,27 +131,34 @@ router.post('/create', fetchuser, async(req, res) =>
         } else {
             modes = req.body.data;
         }
-        const order = await Order.query().patchAndFetchById(req.body.order_id,{
+
+        let payload = {
             // order_number: req.body.order_number,
             total: req.body.total,
             payment_mode: req.body.payment_mode,
             data: JSON.stringify(modes),
-            cash_register_id: req.body.cash_register_id,
+            cash_register_id: lastSession ?? req.body.cash_register_id,
             payment_status: "paid",
             updated_at: europeanDate(),
-        });
-
-        if(order.status !== 'in-kitchen') {
-            const tables = req.body.tables.split('+');
-            await Table.query().whereIn('table_number', tables).update({
-                status:"free"
-            });
+        };
+        
+        if(req.body.extra) {
+            payload.added_total = null
         }
         
+        const order = await Order.query().patchAndFetchById(req.body.order_id,payload);
+
         if (!order) {
             throw new Error('Error creating order');
         }
-
+        
+        // if(order.status !== 'in-kitchen') {
+        //     const tables = req.body.tables.split('+');
+        //     await Table.query().whereIn('table_number', tables).update({
+        //         status:"free"
+        //     });
+        // }
+        
         if (req.body.data) 
         {
             await CashRegister.query().findById( lastSession ).patch({
@@ -142,10 +184,12 @@ router.post('/create', fetchuser, async(req, res) =>
 })
 
 router.get('/link/:dragged/:target', fetchuser, async(req,res) => {
-    try {
 
-        const link = await Table.query().where('table_number', req.params.dragged).patch({
-            linked_to: req.params.target
+    try 
+    {
+        let link = req.params.dragged +"+"+ req.params.target;
+        await Table.query().whereIn('table_number', link.split("+")).patch({
+            linked_to: link
         });
 
         return res.json({
@@ -161,13 +205,14 @@ router.get('/link/:dragged/:target', fetchuser, async(req,res) => {
             message: error.message
         });
     }
+
 });
 
 router.get('/init/:table', fetchuser, async(req,res) => 
 {
-    try 
+    try
     {
-        if((req.params.table).indexOf('+')===-1) {
+        if((req.params.table).indexOf('+') === -1) {
             const table = await Table.query().where('table_number',req.params.table).first();
             if(table.status!== 'free') {
                 return res.status(403).json({
@@ -189,8 +234,7 @@ router.get('/init/:table', fetchuser, async(req,res) =>
             customer_id: req.body.customer_id,
             cash_register_id: register.id,
             user_id: req.body.myID,
-            tables: req.params.table,
-            created_at: europeanDate()
+            tables: req.params.table
         });
 
         const order = await Order.query().findById(created.id);
@@ -199,11 +243,9 @@ router.get('/init/:table', fetchuser, async(req,res) =>
 
         await Table.query().whereIn('table_number', tables).update({
             status:"order ongoing"
-        })
-
-        return res.json({
-            order
         });
+
+        return res.json({ order });
 
     } catch (err) {
 
@@ -229,6 +271,10 @@ router.post('/to-kitchen/:table?', async(req,res) => {
         let order;
         if(req.body.order_id) {
             order = await Order.query().patchAndFetchById(req.body.order_id, payload);
+            if(order.tables) {
+                const tables = order.tables ? [order.tables] : order.tables.split('+');
+                await Table.query().whereIn('table_number', tables).patch({ status : "occupied" });
+            }
         } else {
             order = await Order.query().insertAndFetch({...payload, note: "From direct sale.", created_at: Date.now() });
         }
@@ -304,10 +350,47 @@ router.get('/view-order/:id', fetchuser, async(req, res) =>{
     }
 });
 
-router.get(`/last-order`, fetchuser, async(req,res) => {
-    try // its updated don't look here 
+router.get(`/info/:order`, async(req,res) => {
+    try 
     {
-        let order = await Order.query().orderBy( "created_at", "DESC" ).withGraphFetched('cashier').first();
+        let order = await Order.query().findById(req.params.order);
+        let data = JSON.parse(order.data);
+        
+        const products = await Product.query().whereIn('id', data.products);
+        const pairs = [];
+        
+        products.forEach( pr => {
+            pr.taxAmount = pr.tax && pr.tax!=='null'? (pr.price.replace(/\s+/g, '')?.replace(",",'.') * parseFloat(pr.tax) / 100).toFixed(2) : 0.00;
+            pr.stock = data.quantity[pr.id];
+            pairs.push(pr);
+        });
+
+        return res.json({
+            status: true,
+            order,
+            table: order.tables,
+            products:pairs
+        });
+
+    } catch (e) {
+
+        error.message = e.message;
+        console.log(e.message)
+        return res.json({
+            status: false,
+            order:{},
+            table: null,
+            products: []
+        });
+
+    }
+
+})
+
+router.get(`/last-order`, fetchuser, async(req,res) => {
+    try 
+    {
+        let order = await Order.query().whereIn('status', ['paid','in-kitchen']).orderBy( "created_at", "DESC" ).withGraphFetched('cashier').first();
         const cashier = order.cashier;
         let data = JSON.parse(order.data);
         
@@ -340,6 +423,8 @@ router.get(`/last-order`, fetchuser, async(req,res) => {
     }
 
 })
+
+
 
 router.post(`/x-report`, fetchuser, async(req,res) => {
     try {
@@ -474,7 +559,6 @@ async function generateReport(payload) {
                 }
             }
 
-        //
     }
 
     let me = await User.query().where('id', payload.myID ).first();
@@ -587,4 +671,21 @@ router.get('/remove-report/:id', async(req,res) => {
     }
 })
 
+router.get('/remove-all' , async (req,res) => {
+    try {
+        await Order.query().delete();
+        await Table.query().patch({
+            status:"free"
+        });
+        return res.json({
+            status:true,
+            message: "orders deleted!"
+        })
+    } catch (error) {
+        return res.json({
+            status:false,
+            message: error.message
+        });
+    }
+})
 module.exports=router 

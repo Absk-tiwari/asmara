@@ -13,5 +13,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
     relaunch: () => ipcRenderer.send("relaunch"),
     dialog: () => ipcRenderer.send("open-dialog"),
     toggleFullscreen: (screen) => ipcRenderer.send("exit-fullscreen", screen),
+    sendToKitchen: ({products, printer}) => ipcRenderer.send("print-to-kitchen", ({products,printer})),
     hasError: callback => ipcRenderer.on('has-error', (evt, err)=> callback(err))
 });
